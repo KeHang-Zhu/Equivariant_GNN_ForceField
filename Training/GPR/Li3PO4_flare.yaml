@@ -1,0 +1,104 @@
+# Super cell is read from a file such as vasp, extxyz, lammps-data
+# or any format that ASE supports
+supercell: 
+    file: /n/home09/zkh/Li3PO4_project/Post/li3_crys192.vasp
+    format: vasp       
+    replicate: [1, 1, 1]                      # supercell creation  same as FLARE paper
+    jitter: 0.01                              # perturb the initial atomic positions by 0.01 A, different sparse sets
+
+# Set up FLARE calculator with (sparse) Gaussian process
+flare_calc:
+    gp: SGP_Wrapper
+    kernels:
+        - name: NormalizedDotProduct          # select kernel for comparison of atomic environments
+          sigma: 2.0                          # signal variance, this hyperparameter will be trained, and is typically between 1 and 10.
+          power: 2                            # power of the kernel, influences body-order
+    descriptors:
+        - name: B2                            # Atomic Cluster Expansion (ACE) descriptor from R. Drautz (2019). B1 - B3 "currently".
+          nmax: 8                             # radial fidelity of the descriptor (higher value = higher cost)
+          lmax: 3                             # angular fidelity
+          cutoff_function: quadratic
+          radial_basis: chebyshev
+#          cutoff_matrix: [[7,5],[5,7]]        # In angstroms. NxN array for N_species in a system.
+    energy_noise: 0.2                         # Energy noise hyperparameter. Typically set to 1 meV * N_atoms.
+    forces_noise: 0.1                         # Force noise hyperparameter. System dependent, typically between 0.05 meV/A and 0.2 meV/A.
+    stress_noise: 0.001                       # Stress noise hyperparameter. Typically set to 0.001 meV/A^3.
+    energy_training: True
+    force_training: True
+    stress_training: True
+    species:                                  # Atomic number of your species Z.
+        - 3  # Li
+        - 8 # O
+        - 15 # P
+    single_atom_energies:                     # Single atom energies to bias the energy prediction. Use with poor initial energy estimations. 
+        - 0
+        - 0
+        - 0
+    cutoff: 6                                 # Cutoff for the (ACE) descriptor. Equal the maximum value in the cutoff_matrix. Avoid peaks in RDF 
+    variance_type: local                      # Calculate atomic uncertainties.
+    max_iterations: 20                        # Maximum steps taken during each hyperparameter optimization call.
+    use_mapping: True                         # Print mapped model (ready for use in LAMMPS) during trajectory. Model is re-mapped and replaced if new DFT calls are made throughout the trajectory.
+
+# call dft calculator
+dft_calc:
+    name: Vasp
+    kwargs:
+        nwrite: 1
+        istart: 0
+        lwave: False
+        lcharg: False
+        lvtot: False
+        npar: 16
+        ispin: 1
+        nelm: 2000
+        nelmin: 5
+        nelmdl: -20
+        ediff: 1.0e-6
+        nsw: 0
+        encut: 500 
+        ismear: 0
+        sigma: 0.025
+        lreal: Auto
+        prec: Accurate
+        lasph: True
+        isym: 0
+        xc: PBE
+        kpts: [1, 1, 1]
+        gamma: True
+        algo: Fast
+        lscalapack: False
+    params: {}
+
+# OTF and MD
+otf:
+    mode: fresh                                # Start from an empty SGP
+    md_engine: PyLAMMPS                        # MD eigine
+    md_kwargs:
+        specorder:
+            - Li
+            - O
+            - P
+        dump_period: 10                        # how often to check uncertainty
+        pair_style: flare
+        fix: 
+#            - "1 all nvt temp 250 250 0.1"
+            - "1 all npt temp 600 600 0.1 iso 0.0 0.0 1.0"
+            - "2 all momentum 1 linear 1 1 1 angular"
+#        command: "srun -n 256 --mpi=pmi2 /n/home09/zkh/lammps/build/lmp"
+#        command: "srun -n 256 --mpi=pmi2 --mpi=pmi2 /n/holystore01/LABS/kozinsky_lab/Lab/Software/LAMMPS/05Aug22/cpu/lmp_otf"
+        command: "srun -n 1 /n/holystore01/LABS/kozinsky_lab/Lab/Software/LAMMPS/05Aug22/cpu/lmp_otf"
+        keep_alive: False
+        always_triclinic: True
+    initial_velocity: 600                      # temperature [K]
+    dt: 0.001                                  # [ps]
+    number_of_steps: 100000        
+    output_name: flare_Li3PO4_otf_output
+    std_tolerance_factor: -0.15                # -: absolute; +: value * noise              
+    update_style: threshold
+    update_threshold: 0.015                    # 0.1 of std_tolerance_factor
+    force_only: False
+    max_atoms_added: -1                        # up to the entire list of atoms
+    train_hyps: [3,200]                       # Specifies the range of steps the hyperparameters of the GP are optimized. If the number of DFT calls is in this range, the hyperparameters are not frozen. Defaults to (None, None) which means always training.
+    write_model: 4                             # verbose, print out DFT call
+   # min_steps_with_model: 1                    # same as dump freq
+    wandb_log: flare-Li3PO4-crys-600K-npt

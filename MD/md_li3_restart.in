@@ -1,0 +1,79 @@
+read_restart poly.restart.260000
+
+
+# set newton on for pair_allegro (off for pair_nequip)
+newton on
+
+
+# allegro pair style
+pair_style      allegro
+pair_coeff      * * /n/holyscratch01/kozinsky_lab/Kehang/Li3PO4/ML/Lay2_r6_l2/Li-deployed.pth Li O P
+
+mass 1 6.941
+mass 2 15.9994
+mass 3 30.97376
+
+# Define the temperature
+variable t equal 3000
+variable k equal 900
+velocity all create $t ${SEED} dist gaussian mom yes
+#velocity all create $t 2334 dist gaussian mom yes
+#Gaussian distribution of the velocity and preserve the momentum.
+
+# enter diffusive regime slowly
+neighbor 1.0 bin
+neigh_modify delay 5 every 1
+
+variable d equal 0.001
+timestep $d #0.0005
+thermo 100
+
+# nose-hoover thermostat     
+fix 1 all nvt temp $t $t2 $(100*dt) #tri 1 1 $(1000.0*dt)
+fix 2 all momentum 1 linear 1 1 1 angular
+#nvt 100 timesteps
+#npt 1000 timesteps
+# Define the groups of atoms
+group Li type 1 
+group O type 2
+group P type 3
+ 
+# Define the RDF compute style with a cutoff of 10 ̊A
+#compute rdf_PO all rdf 100 P O cutoff 10.0
+#compute adf_PO all adf 100 P O O cutoff 2.5
+ 
+# Define the MSD compute style
+#compute msd_Li Li msd x y z
+
+# Define the fix style to write the RDFs to a file
+#fix rdf_PO all ave/time 1 1000 1 rdf_PO adf_PO file df_PO.dat
+#fix msd_Li Li ave/time 1 1000 1 c_msd_Li[4] file msd_Li.dat
+
+
+# compute msd of certain species of atoms.
+#group H type 2
+compute msd_Li Li msd com yes
+compute msd_P P msd com yes
+compute msd_O O msd com yes
+thermo_style custom step temp pe ke press vol c_msd_Li[4]
+#log log.diffusion
+
+# fix 2 all ave/time 10 5 100 c_msdH[4] file msdH mode scalar
+# compute rdf and average after some equilibration
+comm_modify cutoff 7.0
+fix 3 all ave/time 1 1 100 c_msd_Li[4] file msd_Li.dat mode scalar
+fix 4 all ave/time 1 1 100 c_msd_P[4] file msd_P.dat mode scalar
+fix 5 all ave/time 1 1 100 c_msd_O[4] file msd_O.dat mode scalar
+
+# record the data for atom positions
+dump            1 all custom 100 dump.trj id type xu yu zu
+dump_modify     1 sort id
+
+# restart(write a re-start file in case breakdown happen)
+restart 100000 poly.restart
+
+# run in 3000ps #1500ps
+run 1000000
+
+fix 6 all nvt temp $t2 $t2 $(100*dt) #tri 1 1 $(1000.0*dt)
+run 2000000

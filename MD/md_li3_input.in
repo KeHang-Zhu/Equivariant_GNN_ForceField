@@ -1,0 +1,129 @@
+units   metal
+atom_style atomic
+dimension 3
+
+# set newton on for pair_allegro (off for pair_nequip)
+newton on
+boundary p p p
+read_data /n/home09/zkh/Li3PO4_project/Post/li3_crystal_1w.data
+
+#variable x_center equal (xlo + xhi)/2
+#variable y_center equal (ylo + yhi)/2
+#variable z_center equal (zlo + zhi)/2
+
+variable x_center equal (xlo+xhi)/2
+variable y_center equal (ylo+yhi)/2
+variable z_center equal (zlo+zhi)/2
+
+variable lx equal (-xlo+xhi)
+variable ly equal (-ylo+yhi)
+variable lz equal (-zlo+zhi)
+
+variable delta_x equal 0.5*lx/3
+variable delta_y equal 0.5*ly/3
+variable delta_z equal 0.5*lz/3
+
+variable x1 equal (${x_center}-${delta_x})
+variable x2 equal (${x_center}+${delta_x})
+variable y1 equal (${y_center}-${delta_y})
+variable y2 equal (${y_center}+${delta_y})
+variable z1 equal (${z_center}-${delta_z})
+variable z2 equal (${z_center}+${delta_z})
+
+# allegro pair style
+pair_style      allegro
+pair_coeff      * * /n/holyscratch01/kozinsky_lab/Kehang/Recrystalization/high-speed5/Li-deployed.pth Li O P
+
+mass 1 6.941
+mass 2 15.9994
+mass 3 30.97376
+
+# Define the groups of atoms
+group Li type 1 
+group O type 2
+group P type 3
+
+region center_region block ${x1} ${x2} ${y1} ${y2} ${z1} ${z2}
+
+region outer_region_1 block EDGE ${x1} EDGE EDGE EDGE EDGE
+region outer_region_2 block ${x2} EDGE EDGE EDGE EDGE EDGE
+region outer_region_3 block ${x1} ${x2} EDGE ${y1} EDGE EDGE
+region outer_region_4 block ${x1} ${x2} ${y2} EDGE EDGE EDGE
+region outer_region_5 block ${x1} ${x2} ${y1} ${y2} EDGE ${z1}
+region outer_region_6 block ${x1} ${x2} ${y1} ${y2} ${z2} EDGE
+
+region outer_region union 6 outer_region_1 outer_region_2 outer_region_3 outer_region_4 outer_region_5 outer_region_6
+
+group           group1 region center_region
+group           group2 region outer_region
+
+# Define the temperature
+variable t equal 3000
+variable k equal 1200
+velocity group1 create $t ${SEED} dist gaussian mom yes
+velocity group2 create $k ${SEED} dist gaussian mom yes
+#velocity all create $t 2334 dist gaussian mom yes
+#Gaussian distribution of the velocity and preserve the momentum.
+
+# enter diffusive regime slowly
+neighbor 1.0 bin
+neigh_modify delay 5 every 1
+
+variable d equal 0.001
+timestep $d #0.0005
+thermo 100
+
+# nose-hoover thermostat     
+fix 1 group2 nvt temp $t $t $(100*dt) #tri 1 1 $(1000.0*dt)
+fix 2 group2 momentum 1 linear 1 1 1 angular
+#nvt 100 timesteps
+#npt 1000 timesteps
+
+# Define the RDF compute style with a cutoff of 10 ̊A
+#compute rdf_PO all rdf 100 P O cutoff 10.0
+#compute adf_PO all adf 100 P O O cutoff 2.5
+ 
+# Define the MSD compute style
+#compute msd_Li Li msd x y z
+
+# Define the fix style to write the RDFs to a file
+#fix rdf_PO all ave/time 1 1000 1 rdf_PO adf_PO file df_PO.dat
+#fix msd_Li Li ave/time 1 1000 1 c_msd_Li[4] file msd_Li.dat
+
+
+# compute msd of certain species of atoms.
+#group H type 2
+compute msd_Li Li msd com yes
+#compute msd_P P msd com yes
+#compute msd_O O msd com yes
+thermo_style custom step temp pe ke press vol c_msd_Li[4]
+#log log.diffusion
+
+# fix 2 all ave/time 10 5 100 c_msdH[4] file msdH mode scalar
+# compute rdf and average after some equilibration
+comm_modify cutoff 7.0
+fix 3 all ave/time 1 1 100 c_msd_Li[4] file msd_Li.dat mode scalar
+#fix 4 all ave/time 1 1 100 c_msd_P[4] file msd_P.dat mode scalar
+#fix 5 all ave/time 1 1 100 c_msd_O[4] file msd_O.dat mode scalar
+
+# record the data for atom positions
+dump            1 all custom 100 dump.trj id type xu yu zu
+dump_modify     1 sort id
+
+# restart(write a re-start file in case breakdown happen)
+restart 100000 poly.restart
+
+# run in 3000ps #1500ps
+run 100000
+
+unfix 1
+unfix 2
+fix 4 group2 nvt temp $t $k $(100*dt)
+fix 5 group2 momentum 1 linear 1 1 1 angular
+run 1000000
+
+unfix 4
+unfix 5
+fix 6 all nvt temp $k $k $(100*dt)
+fix 7 all momentum 1 linear 1 1 1 angular
+run 10000000

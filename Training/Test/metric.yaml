@@ -1,0 +1,11 @@
+# provides metrics for the metrics-config
+metrics_components:
+  - - forces                               # key 
+    - mae                                  # "rmse" or "mae"
+  - - forces
+    - rmse
+  - - total_energy
+    - mae    
+  - - total_energy
+    - mae
+    - PerAtom: True                     

@@ -1,0 +1,67 @@
+# Set up FLARE calculator with (sparse) Gaussian process                        # This section stays the same as previous
+supercell: 
+    file: /n/home09/zkh/li3po4-flare.xyz
+    format: extxyz
+    index: 0
+    replicate: [1, 1, 1]
+    jitter: 0.0
+
+flare_calc:
+    gp: SGP_Wrapper
+    kernels:
+        - name: NormalizedDotProduct
+          sigma: 2
+          power: 2
+    descriptors:
+        - name: B2
+          nmax: 8
+          lmax: 3
+          cutoff_function: quadratic
+          radial_basis: chebyshev
+#          cutoff_matrix: [[5.0]]
+    energy_noise: 0.1
+    forces_noise: 0.05
+    stress_noise: 0.001
+    energy_training: True
+    force_training: True
+    stress_training: False
+    species:
+        - 3  #Li
+        - 8  #O
+        - 15 #P
+    single_atom_energies:
+        - 0
+        - 0
+        - 0
+    cutoff: 5.0
+    variance_type: local
+    max_iterations: 20
+    use_mapping: True
+
+# Set up DFT calculator, it can be any calculator supported by ASE
+dft_calc:
+    name: FakeDFT                                                               # We are going to perform "FakeDFT" since our extxyz input already contains the DFT labels
+    kwargs: {}
+    params: {}
+
+# Set up On-the-fly training and MD
+otf: 
+    mode: fresh                                                                 # Start from empty SGP
+    md_engine: Fake                                                             # Do not perform MD, just read frames sequentially
+    md_kwargs: 
+        filenames: [/n/home09/zkh/li3po4-flare.xyz]
+        format: extxyz
+        index: ":"
+        io_kwargs: {}
+    initial_velocity: file
+    dt: 0.001                                                                   # This value is arbitrary in this setting
+    number_of_steps: 100000                                                     # Set to a value greater than the number of your DFT frames
+    output_name: offline                                                        # output name
+    init_atoms: [0, 90]                                                         # init atoms from first frame to add to sparse set
+    std_tolerance_factor: -0.01
+    max_atoms_added: -1
+    train_hyps: [0,inf]
+    write_model: 4
+    update_style: threshold
+    update_threshold: 0.001
+    force_only: False
